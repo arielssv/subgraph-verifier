@@ -1,0 +1,8 @@
+Read .claude/skills/new-project/SKILL.md and follow it. My project spec is:
+
+[paste spec here]
+
+---
+
+If prior research exists in research.md, add this line before the spec:
+I've done prior research in research.md — read that first.
