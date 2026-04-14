@@ -3,6 +3,7 @@ import { ComparisonPage } from '@/pages/ComparisonPage'
 import { TimelinePage } from '@/pages/TimelinePage'
 import { NetworkToggle } from '@/features/comparison/NetworkToggle'
 import { ComparisonProvider } from '@/store/comparisonContext'
+import { TimelineProvider } from '@/store/timelineContext'
 
 function Layout({ children }: { children: React.ReactNode }) {
   const linkClass = ({ isActive }: { isActive: boolean }) =>
@@ -38,14 +39,16 @@ function Layout({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <ComparisonProvider>
-      <BrowserRouter>
-        <Layout>
-          <Routes>
-            <Route path="/" element={<ComparisonPage />} />
-            <Route path="/timeline" element={<TimelinePage />} />
-          </Routes>
-        </Layout>
-      </BrowserRouter>
+      <TimelineProvider>
+        <BrowserRouter>
+          <Layout>
+            <Routes>
+              <Route path="/" element={<ComparisonPage />} />
+              <Route path="/timeline" element={<TimelinePage />} />
+            </Routes>
+          </Layout>
+        </BrowserRouter>
+      </TimelineProvider>
     </ComparisonProvider>
   )
 }

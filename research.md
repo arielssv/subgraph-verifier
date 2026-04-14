@@ -223,3 +223,166 @@ After each batch, call `onProgress(checked, total)`. React state updates between
 - `claude-refs/repos/subgraph-hoodi/schema.graphql:51-75` — `Operator` entity definition
 - `claude-refs/tech/subgraph.md` — endpoint, pagination, type-handling rules
 - `claude-refs/tech/ssv-contracts.md` — Hoodi Views address (already in `src/config.ts`)
+
+---
+
+## Milestone 2: Operator Timeline Page
+
+### Goal
+
+Wire the Timeline page against Hoodi: user enters an operator ID, page fetches 9 event queries + 2 pre-genesis queries + 4 on-chain reads, and renders a pre-genesis snapshot, a chronological event timeline with block markers, and a current on-chain state card.
+
+### What the spec already pins
+
+- **Text input for operator ID** — drop the `FILTERED_IDS` dropdown from the reference HTML. Text input only.
+- **"Load" button** runs queries. Empty state before first load.
+- **Same loading UX as comparison page** — shadcn `Progress` + status text like `Fetching events: 4/9`, `Fetching on-chain state…`.
+- **"Refresh"** re-runs queries for the current operator ID.
+- **Cross-page state preservation** — navigating away and back keeps the last-loaded operator rendered.
+- **9 event queries** via a shared `fetchAllPaginated(entity, where, fields)` helper:
+  `operatorAddeds`, `clusterMigratedToETHs`, `validatorAddeds`, `validatorRemoveds`,
+  `clusterLiquidateds`, `clusterReactivateds`, `operatorFeeExecuteds`,
+  `operatorWithdrawns`, `operatorRemoveds`.
+- **4 on-chain reads** for current state: `getOperatorFee`, `getOperatorFeeSSV`, `getOperatorById`, `getOperatorByIdSSV`.
+- **3 sections**: Pre-Genesis, Timeline, Current State.
+- **4 block-marker lines** in the timeline: `STAKING_GENESIS_BLOCK` (2219331), `FIX_BLOCK` (2259628), `LAST_FIX_BLOCK` (2434756), `DEFAULT_OPERATOR_FEE_CHANGE_BLOCK` (2569939 — new, adds to the reference's existing 3).
+- **Colors (port verbatim):** registration green, migration orange, val-added green, val-removed red, liquidation red, reactivation purple, fee-change blue, withdrawal light-blue, removal red.
+- **Etherscan**: `https://hoodi.etherscan.io/tx/{txHash}`.
+
+### Schema confirmation
+
+All 9 event entities exist in `claude-refs/repos/subgraph-hoodi/schema.graphql` with the fields the reference uses (verified):
+
+| Entity | Filter field | Key fields |
+|---|---|---|
+| `OperatorAdded` | `operatorId` | `owner`, `fee`, `blockNumber`, `transactionHash` |
+| `ClusterMigratedToETH` | `operatorIds_contains` | `owner`, `operatorIds`, `cluster_validatorCount`, `cluster_active`, `ethDeposited`, `ssvRefunded`, `effectiveBalance`, `blockNumber`, `transactionHash` |
+| `ValidatorAdded` / `ValidatorRemoved` | `operatorIds_contains` | `owner`, `operatorIds`, `cluster_validatorCount`, `cluster_active`, `blockNumber`, `transactionHash` |
+| `ClusterLiquidated` / `ClusterReactivated` | `operatorIds_contains` | `owner`, `operatorIds`, `cluster_validatorCount`, `cluster_active`, `blockNumber`, `transactionHash` |
+| `OperatorFeeExecuted` | `operatorId` | `fee`, `blockNumber`, `transactionHash` |
+| `OperatorWithdrawn` | `operatorId` | `value`, `blockNumber`, `transactionHash` |
+| `OperatorRemoved` | `operatorId` | `blockNumber`, `transactionHash` |
+
+Mixed filter shapes — scalar `operatorId: "X"` for operator-level events, array `operatorIds_contains: ["X"]` for cluster-level events. The generic helper has to accept a raw `where` string.
+
+### Open decisions
+
+#### 1. Event data model: discriminated union
+
+```ts
+type TimelineEvent =
+  | { type: 'registration';  block: number; tx: string; data: {...} }
+  | { type: 'migration';     block: number; tx: string; data: {...} }
+  | { type: 'val-added';     block: number; tx: string; data: {...} }
+  | { type: 'val-removed';   block: number; tx: string; data: {...} }
+  | { type: 'liquidation';   block: number; tx: string; data: {...} }
+  | { type: 'reactivation';  block: number; tx: string; data: {...} }
+  | { type: 'fee-change';    block: number; tx: string; data: {...} }
+  | { type: 'withdrawal';    block: number; tx: string; data: {...} }
+  | { type: 'removal';       block: number; tx: string; data: {...} }
+```
+
+After fetching all 9 queries, merge into a flat list, sort by `block` asc (tiebreaker: type), then **aggregate same-type+same-block+same-tx events into a group**. This matches the reference's behavior (e.g. validator-added bursts from a single tx render as one card with a count).
+
+#### 2. Cross-page cache: single-operator slab
+
+Same pattern as the Compare page — one slab, not a keyed map. Loading a new operator ID replaces the slot. On navigation back, we render whichever operator was last loaded. No multi-operator history.
+
+```ts
+type TimelineState =
+  | { status: 'idle' }
+  | { status: 'loading'; operatorId: string; stage: LoadStage; startedAt: number }
+  | { status: 'ready'; operatorId: string; data: TimelineData; lastFetchedAt: number }
+  | { status: 'not-found'; operatorId: string }
+  | { status: 'error'; operatorId: string; message: string }
+
+type LoadStage = 'events' | 'pre-genesis' | 'on-chain'
+```
+
+Rationale: user asked for simpler state; a per-operator cache adds storage/eviction complexity without a clear user need (the common flow is "check one operator, investigate, move on").
+
+#### 3. localStorage shape
+
+Key: `subgraph-verifier:timeline:v1`. Persist only the `ready` state. Ignore `not-found` and `error`. Bump version when model changes.
+
+```ts
+type Persisted = {
+  version: 1
+  operatorId: string
+  data: TimelineData
+  lastFetchedAt: number
+}
+```
+
+Hydrate on Provider mount; save on every `READY` transition. Single slab — no eviction logic.
+
+#### 4. Progress reporting: 3-stage stepper
+
+9 event queries + 2 pre-genesis queries + 4 RPC calls in **3 sequential stages**, each running its tasks in parallel:
+1. `events` — 9 queries via `Promise.all`
+2. `pre-genesis` — 2 queries via `Promise.all`
+3. `on-chain` — 4 RPC calls via `Promise.all`
+
+UI: vertical stepper with 3 rows, each with a dot indicator:
+- `✓` completed (check, muted-green text)
+- `◐` active (spinner, primary color)
+- `○` pending (empty circle, muted text)
+
+Plus an indeterminate progress bar below. Stages are usually <3s each — a numeric counter would feel noisy.
+
+#### 5. Generic pagination helper
+
+```ts
+async function fetchAllPaginated<T>(
+  entity: string,
+  where: string,     // raw GraphQL `where` clause body
+  fields: string,    // raw GraphQL selection set
+): Promise<T[]>
+```
+
+Reuses the same `SUBGRAPH_URL` as `subgraphClient.ts`. Orders by `blockNumber` asc with `first: 1000, skip: <n>`. Loops until a batch < 1000.
+
+Hoodi currently has thin event volume (few operators with >1k events). But the helper is spec-mandated and matches the reference — keep the loop even if it rarely iterates.
+
+#### 6. UI structure (shadcn-flavored, not reference's dark theme)
+
+The reference HTML uses a dark GitHub-like theme. We're on shadcn's neutral palette (light by default) — don't port the colors literally, use semantic tokens:
+
+- **Event cards**: shadcn `Card` with a 4px colored left border per event type (green/orange/blue/etc. via Tailwind classes).
+- **Timeline rail**: absolute-positioned left bar (Tailwind `border-l`) with small colored circles per event, positioned via inline `<span>`.
+- **Block markers**: inline chip spanning the timeline rail, dashed border, neutral-muted text.
+- **Pre-Genesis + Current State**: two shadcn `Card`s with a small grid of `label/value` pairs.
+- **No legend.** The event type is in uppercase-bold at the top of each card (`VALIDATOR ADDED ×3`, `FEE CHANGE`, etc.); the colored border is decorative reinforcement, not a decoder ring.
+
+Sketch of per-event card:
+```
+┌─ [accent-border-left: green] ──────────────────────────┐
+│ VALIDATOR ADDED ×3                       Block 2345000  │
+│                                          0xdef… ↗      │
+│ Owner: 0xaaa…001   Operators: [12, 47]                 │
+│ Cluster ValCount (after): 14   Active: true            │
+└────────────────────────────────────────────────────────┘
+```
+
+#### 7. Testing strategy
+
+Two areas:
+- **`groupEvents`** — pure function that takes a flat list of typed events and returns the aggregated `EventGroup[]`. Test: single event stays single; 3 val-addeds same block+tx collapse to 1 group with count=3; different tx stays separate; different type stays separate; different block stays separate.
+- **`fetchAllPaginated` contract** — can be tested by mocking `fetch`. Keep test minimal (1 page stops loop; 2 pages concatenates).
+
+No component-render tests in M2 — same policy as M1. The UI is mostly structural.
+
+### Dependencies & risks
+
+- **Subgraph event volume on Hoodi**: reference worked against current Hoodi data with no pagination issues per operator. Safe assumption.
+- **Operator not found**: `operator(id: "X")` returns `null` for unregistered IDs. Need to handle gracefully — show an empty state with "Operator N not found" rather than crash.
+- **All 4 RPC calls failing**: `getOperatorById` / `getOperatorByIdSSV` / `getOperatorFee` / `getOperatorFeeSSV` each independently may revert. Current-state card must tolerate partial on-chain data (render `err` where applicable).
+- **Block-marker placement**: markers insert *before* the first event that crosses their threshold. If no events cross, they still render — stacked at the end. This matches the reference.
+- **Cache explosion**: 20-operator cap on the `entries` map. Beyond that, LRU-evict oldest.
+
+### External references
+
+- `C:/Users/ariel/repositories/sub-diff/operator-timeline.html` — reference implementation (port queries, aggregation, colors verbatim)
+- `claude-refs/repos/subgraph-hoodi/schema.graphql:171-553` — all 9 event entity definitions
+- `claude-refs/tech/subgraph.md` — endpoint, pagination rules (same as M1)
+- `claude-refs/tech/ssv-contracts.md` — Views contract ABI (already in `src/config.ts`)
