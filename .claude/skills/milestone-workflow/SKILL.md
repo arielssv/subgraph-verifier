@@ -89,11 +89,14 @@ Only move to Phase 5 once the milestone's testing criteria (defined in planning)
 
 ## Phase 5: Commit & Tag
 
-1. Stage changes: `git add -A`
-2. Commit: `feat(milestone-N): [description of deliverables]`
-3. Tag: `git tag -a vX.N.0 -m "Milestone N: [title]"`
-4. Do NOT push — inform the user the milestone is committed locally and ready to deploy
-5. When user explicitly confirms, merge to main and push:
+1. Verify identity is locally set:
+     git config --local user.email
+     - If empty or matches global, STOP and ask the user before committing.
+2. Stage changes: `git add -A`
+3. Commit: `feat(milestone-N): [description of deliverables]`
+4. Tag: `git tag -a vX.N.0 -m "Milestone N: [title]"`
+5. Do NOT push — inform the user the milestone is committed locally and ready to deploy
+6. When user explicitly confirms, merge to main and push:
    ```
    git checkout main
    git merge [current-branch]

@@ -77,6 +77,12 @@ Using the template in the current CLAUDE.md, fill in:
     2. Has the GitHub repo been created yet?
        - Yes → fill in the full SSH remote URL
        - No → leave as placeholder and remind user to create the repo on GitHub first, then run `git remote add origin <url>`
+	1. 3. **As the FIRST step of milestone 0**, run:
+         git init -b main
+         git config user.name "<from above>"
+         git config user.email "<from above>"
+         git remote add origin <SSH URL>
+         This MUST happen before any other scaffolding tool runs.
 - Milestone 0 — reference is already there, no changes needed
 
 Present the filled-in CLAUDE.md to the user for confirmation before writing it.
