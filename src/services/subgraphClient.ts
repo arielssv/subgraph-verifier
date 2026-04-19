@@ -1,4 +1,4 @@
-import { SUBGRAPH_URL } from '@/config'
+import { getSubgraphUrl } from '@/services/endpoint'
 import type { SubgraphOperator } from '@/types/comparison'
 
 const PAGE_SIZE = 1000
@@ -27,7 +27,7 @@ export async function fetchAllOperators(): Promise<SubgraphOperator[]> {
       }
     }`
 
-    const res = await fetch(SUBGRAPH_URL, {
+    const res = await fetch(getSubgraphUrl(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query }),

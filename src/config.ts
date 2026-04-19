@@ -1,5 +1,5 @@
 export const RPC_URL = "https://ethereum-hoodi-rpc.publicnode.com";
-export const SUBGRAPH_URL =
+export const DEFAULT_SUBGRAPH_URL =
   "https://api.studio.thegraph.com/query/71118/ssv-network-hoodi/version/latest";
 export const VIEWS_ADDRESS = "0x5AdDb3f1529C5ec70D77400499eE4bbF328368fe";
 

@@ -2,6 +2,7 @@ import { BrowserRouter, Link, NavLink, Route, Routes } from 'react-router'
 import { ComparisonPage } from '@/pages/ComparisonPage'
 import { TimelinePage } from '@/pages/TimelinePage'
 import { NetworkToggle } from '@/features/comparison/NetworkToggle'
+import { EndpointBar } from '@/components/EndpointBar'
 import { ComparisonProvider } from '@/store/comparisonContext'
 import { TimelineProvider } from '@/store/timelineContext'
 
@@ -31,6 +32,7 @@ function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </nav>
       </header>
+      <EndpointBar />
       <main className="mx-auto max-w-6xl px-4 py-8">{children}</main>
     </div>
   )

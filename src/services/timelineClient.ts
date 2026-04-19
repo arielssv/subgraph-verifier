@@ -1,9 +1,9 @@
-import { SUBGRAPH_URL } from '@/config'
+import { getSubgraphUrl } from '@/services/endpoint'
 
 const PAGE_SIZE = 1000
 
 export async function gql<T = unknown>(query: string): Promise<T> {
-  const res = await fetch(SUBGRAPH_URL, {
+  const res = await fetch(getSubgraphUrl(), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query }),
