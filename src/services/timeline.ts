@@ -10,6 +10,7 @@ import {
   type LoadStage,
   type MigrationEvent,
   type OperatorAddedEvent,
+  type PrivacyUpdateEvent,
   type RemovalEvent,
   type TimelineData,
   type TimelineEvent,
@@ -33,16 +34,17 @@ async function fetchOperator(operatorId: string): Promise<TimelineOperator | nul
   return data.operator
 }
 
-function mapRows<D extends { blockNumber: string; transactionHash: string }, T extends TimelineEvent['type']>(
-  type: T,
-  rows: D[],
-  minBlock?: number,
-): TimelineEvent[] {
+function mapRows<
+  D extends { blockNumber: string; blockTimestamp: string; transactionHash: string },
+  T extends TimelineEvent['type'],
+>(type: T, rows: D[], minBlock?: number): TimelineEvent[] {
   const out: TimelineEvent[] = []
   for (const r of rows) {
     const block = Number(r.blockNumber)
     if (minBlock !== undefined && block < minBlock) continue
-    out.push({ type, block, tx: r.transactionHash, data: r } as unknown as TimelineEvent)
+    // Subgraph timestamps are seconds; we carry ms for formatRelativeTime.
+    const timestamp = Number(r.blockTimestamp) * 1000
+    out.push({ type, block, timestamp, tx: r.transactionHash, data: r } as unknown as TimelineEvent)
   }
   return out
 }
@@ -54,8 +56,6 @@ async function fetchEventsStage(operatorId: string): Promise<{
   const operator = await fetchOperator(operatorId)
   if (!operator) throw new OperatorNotFoundError(operatorId)
 
-  const genesis = getGenesisBlock(getActiveNetworkConfig())
-
   const [
     registrations,
     migrations,
@@ -66,56 +66,62 @@ async function fetchEventsStage(operatorId: string): Promise<{
     feeChanges,
     withdrawals,
     removals,
+    privacyUpdates,
   ] = await Promise.all([
     fetchAllPaginated<OperatorAddedEvent>(
       'operatorAddeds',
       `operatorId: "${operatorId}"`,
-      'operatorId owner fee blockNumber transactionHash',
+      'operatorId owner fee blockNumber blockTimestamp transactionHash',
     ),
     fetchAllPaginated<MigrationEvent>(
       'clusterMigratedToETHs',
-      `operatorIds_contains: ["${operatorId}"], blockNumber_gte: "${genesis}"`,
-      'owner operatorIds cluster_validatorCount cluster_active ethDeposited ssvRefunded effectiveBalance blockNumber transactionHash',
+      `operatorIds_contains: ["${operatorId}"]`,
+      'owner operatorIds cluster_validatorCount cluster_active ethDeposited ssvRefunded effectiveBalance blockNumber blockTimestamp transactionHash',
     ),
     fetchAllPaginated<ClusterEvent>(
       'validatorAddeds',
-      `operatorIds_contains: ["${operatorId}"], blockNumber_gte: "${genesis}"`,
-      'owner operatorIds cluster_validatorCount cluster_active blockNumber transactionHash',
+      `operatorIds_contains: ["${operatorId}"]`,
+      'owner operatorIds cluster_validatorCount cluster_active blockNumber blockTimestamp transactionHash',
     ),
     fetchAllPaginated<ClusterEvent>(
       'validatorRemoveds',
-      `operatorIds_contains: ["${operatorId}"], blockNumber_gte: "${genesis}"`,
-      'owner operatorIds cluster_validatorCount cluster_active blockNumber transactionHash',
+      `operatorIds_contains: ["${operatorId}"]`,
+      'owner operatorIds cluster_validatorCount cluster_active blockNumber blockTimestamp transactionHash',
     ),
     fetchAllPaginated<ClusterEvent>(
       'clusterLiquidateds',
-      `operatorIds_contains: ["${operatorId}"], blockNumber_gte: "${genesis}"`,
-      'owner operatorIds cluster_validatorCount cluster_active blockNumber transactionHash',
+      `operatorIds_contains: ["${operatorId}"]`,
+      'owner operatorIds cluster_validatorCount cluster_active blockNumber blockTimestamp transactionHash',
     ),
     fetchAllPaginated<ClusterEvent>(
       'clusterReactivateds',
-      `operatorIds_contains: ["${operatorId}"], blockNumber_gte: "${genesis}"`,
-      'owner operatorIds cluster_validatorCount cluster_active blockNumber transactionHash',
+      `operatorIds_contains: ["${operatorId}"]`,
+      'owner operatorIds cluster_validatorCount cluster_active blockNumber blockTimestamp transactionHash',
     ),
     fetchAllPaginated<FeeChangeEvent>(
       'operatorFeeExecuteds',
-      `operatorId: "${operatorId}", blockNumber_gte: "${genesis}"`,
-      'operatorId fee blockNumber transactionHash',
+      `operatorId: "${operatorId}"`,
+      'operatorId fee blockNumber blockTimestamp transactionHash',
     ),
     fetchAllPaginated<WithdrawalEvent>(
       'operatorWithdrawns',
-      `operatorId: "${operatorId}", blockNumber_gte: "${genesis}"`,
-      'operatorId value blockNumber transactionHash',
+      `operatorId: "${operatorId}"`,
+      'operatorId value blockNumber blockTimestamp transactionHash',
     ),
     fetchAllPaginated<RemovalEvent>(
       'operatorRemoveds',
-      `operatorId: "${operatorId}", blockNumber_gte: "${genesis}"`,
-      'operatorId blockNumber transactionHash',
+      `operatorId: "${operatorId}"`,
+      'operatorId blockNumber blockTimestamp transactionHash',
+    ),
+    fetchAllPaginated<PrivacyUpdateEvent>(
+      'operatorPrivacyStatusUpdateds',
+      `operatorIds_contains: ["${operatorId}"]`,
+      'operatorIds toPrivate blockNumber blockTimestamp transactionHash',
     ),
   ])
 
   const events: TimelineEvent[] = [
-    ...mapRows('registration', registrations, genesis),
+    ...mapRows('registration', registrations),
     ...mapRows('migration', migrations),
     ...mapRows('val-added', validatorAddeds),
     ...mapRows('val-removed', validatorRemoveds),
@@ -124,12 +130,9 @@ async function fetchEventsStage(operatorId: string): Promise<{
     ...mapRows('fee-change', feeChanges),
     ...mapRows('withdrawal', withdrawals),
     ...mapRows('removal', removals),
+    ...mapRows('privacy-update', privacyUpdates),
   ]
 
-  // Keep the first-ever registration around for the pre-genesis snapshot, even if it's before genesis.
-  // fetchEventsStage returns events filtered to >= genesis; the caller builds preGenesis from the raw registrations list,
-  // but since we already filtered, we'll fetch registrations separately in preGenesisStage when needed.
-  // To keep the API simple, expose registrations unfiltered via a separate helper below.
   return { operator, events }
 }
 
@@ -137,7 +140,7 @@ async function fetchFirstRegistration(operatorId: string): Promise<OperatorAdded
   const rows = await fetchAllPaginated<OperatorAddedEvent>(
     'operatorAddeds',
     `operatorId: "${operatorId}"`,
-    'operatorId owner fee blockNumber transactionHash',
+    'operatorId owner fee blockNumber blockTimestamp transactionHash',
   )
   return rows.length > 0 ? rows[0] : null
 }
@@ -204,6 +207,20 @@ async function fetchOnChainStage(contract: Contract, operatorId: string): Promis
   }
 }
 
+function derivePrivacyAtGenesis(events: TimelineEvent[], genesis: number): boolean | null {
+  let state: boolean | null = null
+  let lastBlock = -1
+  for (const e of events) {
+    if (e.type !== 'privacy-update') continue
+    if (e.block >= genesis) continue
+    if (e.block > lastBlock) {
+      lastBlock = e.block
+      state = e.data.toPrivate
+    }
+  }
+  return state
+}
+
 export async function loadTimeline(
   operatorId: string,
   opts: LoadTimelineOptions = {},
@@ -215,8 +232,14 @@ export async function loadTimeline(
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
 
   onStage?.('pre-genesis')
-  const preGenesis = await fetchPreGenesisStage(operatorId)
+  const preCounts = await fetchPreGenesisStage(operatorId)
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+
+  const genesis = getGenesisBlock(getActiveNetworkConfig())
+  const preGenesis = {
+    ...preCounts,
+    isPrivateAtGenesis: derivePrivacyAtGenesis(events, genesis),
+  }
 
   onStage?.('on-chain')
   const contract = getViewsContract()

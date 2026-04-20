@@ -12,7 +12,7 @@ export function groupEvents(events: TimelineEvent[]): EventGroup[] {
     if (last && last.type === e.type && last.block === e.block && last.tx === e.tx) {
       last.items.push(e.data)
     } else {
-      groups.push({ type: e.type, block: e.block, tx: e.tx, items: [e.data] })
+      groups.push({ type: e.type, block: e.block, timestamp: e.timestamp, tx: e.tx, items: [e.data] })
     }
   }
   return groups

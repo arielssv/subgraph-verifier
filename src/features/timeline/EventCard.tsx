@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { EVENT_ACCENT, EVENT_DOT, EVENT_TEXT } from '@/features/timeline/eventColors'
 import { useNetwork } from '@/store/networkContext'
 import {
@@ -7,9 +8,11 @@ import {
   type FeeChangeEvent,
   type MigrationEvent,
   type OperatorAddedEvent,
+  type PrivacyUpdateEvent,
   type TimelineEventType,
   type WithdrawalEvent,
 } from '@/types/timeline'
+import { formatRelativeTime } from '@/utils/formatTime'
 
 function shortAddr(addr: string): string {
   if (!addr) return ''
@@ -17,7 +20,11 @@ function shortAddr(addr: string): string {
 }
 
 function shortTx(hash: string): string {
-  return `${hash.slice(0, 10)}…`
+  // 0x-prefixed hash → "0xFIRST4…LAST4"
+  if (hash.startsWith('0x') && hash.length >= 10) {
+    return `${hash.slice(0, 6)}…${hash.slice(-4)}`
+  }
+  return hash
 }
 
 function Field({ label, value }: { label: string; value: string | number }) {
@@ -141,6 +148,20 @@ function WithdrawalBody({ items }: { items: WithdrawalEvent[] }) {
   )
 }
 
+function PrivacyUpdateBody({ items }: { items: PrivacyUpdateEvent[] }) {
+  return (
+    <div className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1">
+      {items.map((d, i) => (
+        <div key={i} className="col-span-full grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1">
+          {items.length > 1 && <Separator label={`batch ${i + 1}`} />}
+          <Field label="New Status" value={d.toPrivate ? 'Private' : 'Public'} />
+          <Field label="Operators" value={`[${d.operatorIds.join(', ')}]`} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function Body({ group }: { group: EventGroup }) {
   switch (group.type) {
     case 'registration':
@@ -157,6 +178,8 @@ function Body({ group }: { group: EventGroup }) {
       return <FeeChangeBody items={group.items as FeeChangeEvent[]} />
     case 'withdrawal':
       return <WithdrawalBody items={group.items as WithdrawalEvent[]} />
+    case 'privacy-update':
+      return <PrivacyUpdateBody items={group.items as PrivacyUpdateEvent[]} />
     case 'removal':
       return null
     default:
@@ -169,6 +192,7 @@ export function EventCard({ group }: { group: EventGroup }) {
   const count = group.items.length
   const label = TYPE_LABELS[group.type as TimelineEventType]
   const txHref = `${config.etherscanBaseUrl}/tx/${group.tx}`
+  const relativeTime = useRelativeTime(group.timestamp)
 
   return (
     <div className="relative">
@@ -185,6 +209,12 @@ export function EventCard({ group }: { group: EventGroup }) {
           </span>
           <span className="text-xs text-muted-foreground">
             Block {group.block}
+            {relativeTime && (
+              <>
+                {' · '}
+                <span title={new Date(group.timestamp).toISOString()}>{relativeTime}</span>
+              </>
+            )}
             {' · '}
             <a
               href={txHref}
@@ -202,4 +232,14 @@ export function EventCard({ group }: { group: EventGroup }) {
       </div>
     </div>
   )
+}
+
+function useRelativeTime(ms: number): string | null {
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(id)
+  }, [])
+  if (!Number.isFinite(ms) || ms <= 0) return null
+  return formatRelativeTime(ms, now)
 }

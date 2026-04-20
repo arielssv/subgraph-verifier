@@ -10,6 +10,7 @@ export const EVENT_ACCENT: Record<TimelineEventType, string> = {
   'fee-change': 'border-l-blue-500',
   withdrawal: 'border-l-sky-500',
   removal: 'border-l-red-500',
+  'privacy-update': 'border-l-indigo-500',
 }
 
 export const EVENT_DOT: Record<TimelineEventType, string> = {
@@ -22,6 +23,7 @@ export const EVENT_DOT: Record<TimelineEventType, string> = {
   'fee-change': 'bg-blue-500',
   withdrawal: 'bg-sky-500',
   removal: 'bg-red-500',
+  'privacy-update': 'bg-indigo-500',
 }
 
 export const EVENT_TEXT: Record<TimelineEventType, string> = {
@@ -34,4 +36,5 @@ export const EVENT_TEXT: Record<TimelineEventType, string> = {
   'fee-change': 'text-blue-600',
   withdrawal: 'text-sky-600',
   removal: 'text-red-600',
+  'privacy-update': 'text-indigo-600',
 }

@@ -5,59 +5,78 @@ import { groupEvents } from '@/services/groupEvents'
 import { useNetwork } from '@/store/networkContext'
 import type { EventGroup, TimelineEvent } from '@/types/timeline'
 
-const COLORS: Record<BlockMarkerId, { border: string; text: string; dot: string }> = {
+type BandId = BlockMarkerId | 'pre-genesis'
+
+const COLORS: Record<BandId, { border: string; text: string; dot: string }> = {
+  'pre-genesis': { border: 'border-slate-400', text: 'text-slate-600', dot: 'bg-slate-400' },
   genesis: { border: 'border-amber-500', text: 'text-amber-700', dot: 'bg-amber-500' },
   fix: { border: 'border-red-500', text: 'text-red-700', dot: 'bg-red-500' },
   'last-fix': { border: 'border-amber-500', text: 'text-amber-700', dot: 'bg-amber-500' },
   'default-fee-change': { border: 'border-blue-500', text: 'text-blue-700', dot: 'bg-blue-500' },
 }
 
-function labelFor(markerId: BlockMarkerId, markerLabel: string, block: number): string {
-  const prefix = markerId === 'genesis' ? 'After SSV Staking Genesis' : `After ${markerLabel}`
-  return `${prefix} — Block ${block}`
-}
-
 export function TimelineRail({ events }: { events: TimelineEvent[] }) {
   const { config } = useNetwork()
 
-  // Bands are the network's block markers sorted chronologically (ascending block).
-  const bandsChron = useMemo(
+  // Bands from network markers, chronologically; pre-genesis is an implicit first band.
+  const markersChron = useMemo(
     () => [...config.blockMarkers].sort((a, b) => a.block - b.block),
     [config],
   )
-  // For bucketing, evaluate from highest to lowest so later markers win.
-  const bandsTopDown = useMemo(() => [...bandsChron].reverse(), [bandsChron])
+  const markersTopDown = useMemo(() => [...markersChron].reverse(), [markersChron])
+  const genesisBlock = useMemo(() => {
+    const g = markersChron.find((m) => m.id === 'genesis')
+    return g ? g.block : 0
+  }, [markersChron])
 
-  const groupsByBand = useMemo(() => {
+  const { groupsByBand, hasPreGenesis } = useMemo(() => {
     const all = groupEvents(events)
-    const map = new Map<BlockMarkerId, EventGroup[]>(bandsChron.map((m) => [m.id, []]))
+    const map = new Map<BandId, EventGroup[]>()
+    map.set('pre-genesis', [])
+    for (const m of markersChron) map.set(m.id, [])
+
     for (const g of all) {
+      if (g.block < genesisBlock) {
+        map.get('pre-genesis')!.push(g)
+        continue
+      }
       let assigned: BlockMarkerId | null = null
-      for (const m of bandsTopDown) {
-        // Genesis uses >= (registration at genesis block itself belongs to the first band);
-        // every later marker uses > (strictly after the marker block).
+      for (const m of markersTopDown) {
         const ok = m.id === 'genesis' ? g.block >= m.block : g.block > m.block
         if (ok) {
           assigned = m.id
           break
         }
       }
-      if (assigned === null) continue
-      map.get(assigned)!.push(g)
+      if (assigned !== null) map.get(assigned)!.push(g)
     }
-    return map
-  }, [events, bandsChron, bandsTopDown])
+
+    return {
+      groupsByBand: map,
+      hasPreGenesis: (map.get('pre-genesis') ?? []).length > 0,
+    }
+  }, [events, markersChron, markersTopDown, genesisBlock])
 
   return (
     <div className="flex flex-col gap-3">
-      {bandsChron.map((m) => (
+      {hasPreGenesis && (
         <RangeSection
-          key={m.id}
-          variant={m.id}
-          label={labelFor(m.id, m.label, m.block)}
-          groups={groupsByBand.get(m.id) ?? []}
+          variant="pre-genesis"
+          label={`Before SSV Staking Genesis — Block ${genesisBlock}`}
+          groups={groupsByBand.get('pre-genesis') ?? []}
         />
-      ))}
+      )}
+      {markersChron.map((m) => {
+        const prefix = m.id === 'genesis' ? 'After SSV Staking Genesis' : `After ${m.label}`
+        return (
+          <RangeSection
+            key={m.id}
+            variant={m.id}
+            label={`${prefix} — Block ${m.block}`}
+            groups={groupsByBand.get(m.id) ?? []}
+          />
+        )
+      })}
     </div>
   )
 }
@@ -67,7 +86,7 @@ function RangeSection({
   label,
   groups,
 }: {
-  variant: BlockMarkerId
+  variant: BandId
   label: string
   groups: EventGroup[]
 }) {

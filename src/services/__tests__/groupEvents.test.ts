@@ -6,6 +6,7 @@ function valAdded(block: number, tx: string, extra: Partial<TimelineEvent & { ty
   return {
     type: 'val-added',
     block,
+    timestamp: block * 12_000,
     tx,
     data: {
       owner: '0xowner',
@@ -13,6 +14,7 @@ function valAdded(block: number, tx: string, extra: Partial<TimelineEvent & { ty
       cluster_validatorCount: '1',
       cluster_active: true,
       blockNumber: String(block),
+      blockTimestamp: String(block * 12),
       transactionHash: tx,
       ...(extra as object),
     },
@@ -23,8 +25,15 @@ function feeChange(block: number, tx: string, fee: string): TimelineEvent {
   return {
     type: 'fee-change',
     block,
+    timestamp: block * 12_000,
     tx,
-    data: { operatorId: '47', fee, blockNumber: String(block), transactionHash: tx },
+    data: {
+      operatorId: '47',
+      fee,
+      blockNumber: String(block),
+      blockTimestamp: String(block * 12),
+      transactionHash: tx,
+    },
   }
 }
 
