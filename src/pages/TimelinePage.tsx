@@ -5,12 +5,14 @@ import { LoadingStepper } from '@/features/timeline/LoadingStepper'
 import { OperatorInput } from '@/features/timeline/OperatorInput'
 import { PreGenesisCard } from '@/features/timeline/PreGenesisCard'
 import { TimelineRail } from '@/features/timeline/TimelineRail'
+import { useNetwork } from '@/store/networkContext'
 import { useTimeline } from '@/store/timelineContext'
 import { formatRelativeTime } from '@/utils/formatTime'
 import { useEffect, useState } from 'react'
 
 export function TimelinePage() {
   const { state, load, refresh } = useTimeline()
+  const { config } = useNetwork()
 
   const isLoading = state.status === 'loading'
   const canRefresh = state.status === 'ready' || state.status === 'error' || state.status === 'not-found'
@@ -24,7 +26,7 @@ export function TimelinePage() {
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold">Operator Timeline</h2>
-          <SubtitleForState state={state} />
+          <SubtitleForState state={state} networkLabel={config.label} />
         </div>
         <Button variant="outline" onClick={() => void refresh()} disabled={!canRefresh || isLoading}>
           Refresh
@@ -52,7 +54,7 @@ export function TimelinePage() {
       {state.status === 'not-found' && (
         <InlineMessageCard
           title="Operator not found"
-          message={`No operator with ID ${state.operatorId} on Hoodi.`}
+          message={`No operator with ID ${state.operatorId} on ${config.label}.`}
           variant="warning"
         />
       )}
@@ -81,21 +83,27 @@ export function TimelinePage() {
   )
 }
 
-function SubtitleForState({ state }: { state: ReturnType<typeof useTimeline>['state'] }) {
+function SubtitleForState({
+  state,
+  networkLabel,
+}: {
+  state: ReturnType<typeof useTimeline>['state']
+  networkLabel: string
+}) {
   if (state.status === 'ready') {
     return (
       <p className="text-sm text-muted-foreground">
-        Operator {state.operatorId} · last fetched <RelativeTimestamp ts={state.lastFetchedAt} /> · Hoodi
+        Operator {state.operatorId} · last fetched <RelativeTimestamp ts={state.lastFetchedAt} /> · {networkLabel}
       </p>
     )
   }
   if (state.status === 'loading') {
-    return <p className="text-sm text-muted-foreground">Loading operator {state.operatorId} · Hoodi</p>
+    return <p className="text-sm text-muted-foreground">Loading operator {state.operatorId} · {networkLabel}</p>
   }
   if (state.status === 'not-found' || state.status === 'error') {
-    return <p className="text-sm text-muted-foreground">Operator {state.operatorId} · Hoodi</p>
+    return <p className="text-sm text-muted-foreground">Operator {state.operatorId} · {networkLabel}</p>
   }
-  return <p className="text-sm text-muted-foreground">Enter an operator ID · Hoodi</p>
+  return <p className="text-sm text-muted-foreground">Enter an operator ID · {networkLabel}</p>
 }
 
 function IdlePanel() {

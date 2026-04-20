@@ -4,6 +4,7 @@ import { TimelinePage } from '@/pages/TimelinePage'
 import { NetworkToggle } from '@/features/comparison/NetworkToggle'
 import { EndpointBar } from '@/components/EndpointBar'
 import { ComparisonProvider } from '@/store/comparisonContext'
+import { NetworkProvider, useNetwork } from '@/store/networkContext'
 import { TimelineProvider } from '@/store/timelineContext'
 
 function Layout({ children }: { children: React.ReactNode }) {
@@ -13,6 +14,8 @@ function Layout({ children }: { children: React.ReactNode }) {
         ? 'bg-primary text-primary-foreground'
         : 'text-foreground hover:bg-muted'
     }`
+
+  const { networkId } = useNetwork()
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -32,16 +35,27 @@ function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </nav>
       </header>
-      <EndpointBar />
+      <EndpointBar key={networkId} />
       <main className="mx-auto max-w-6xl px-4 py-8">{children}</main>
     </div>
   )
 }
 
+function NetworkScopedProviders({ children }: { children: React.ReactNode }) {
+  const { networkId } = useNetwork()
+  // Remount comparison + timeline providers on network switch so their reducers
+  // re-initialize from the (now-cleared) localStorage and any in-flight state drops.
+  return (
+    <ComparisonProvider key={`cmp-${networkId}`}>
+      <TimelineProvider key={`tl-${networkId}`}>{children}</TimelineProvider>
+    </ComparisonProvider>
+  )
+}
+
 export default function App() {
   return (
-    <ComparisonProvider>
-      <TimelineProvider>
+    <NetworkProvider>
+      <NetworkScopedProviders>
         <BrowserRouter>
           <Layout>
             <Routes>
@@ -50,7 +64,7 @@ export default function App() {
             </Routes>
           </Layout>
         </BrowserRouter>
-      </TimelineProvider>
-    </ComparisonProvider>
+      </NetworkScopedProviders>
+    </NetworkProvider>
   )
 }

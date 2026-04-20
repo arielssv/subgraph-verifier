@@ -1,14 +1,18 @@
 import { Contract, JsonRpcProvider } from 'ethers'
-import { RPC_URL, VIEWS_ABI, VIEWS_ADDRESS } from '@/config'
+import { VIEWS_ABI, type NetworkId } from '@/config'
+import { getActiveNetworkConfig, getActiveNetworkId } from '@/services/network'
 import type { OnChainOperator, OnChainResult } from '@/types/comparison'
 
-let provider: JsonRpcProvider | null = null
+let cachedNetworkId: NetworkId | null = null
 let viewsContract: Contract | null = null
 
 export function getViewsContract(): Contract {
-  if (!viewsContract) {
-    provider = new JsonRpcProvider(RPC_URL)
-    viewsContract = new Contract(VIEWS_ADDRESS, VIEWS_ABI, provider)
+  const activeId = getActiveNetworkId()
+  if (!viewsContract || cachedNetworkId !== activeId) {
+    const config = getActiveNetworkConfig()
+    const provider = new JsonRpcProvider(config.rpcUrl)
+    viewsContract = new Contract(config.viewsAddress, VIEWS_ABI, provider)
+    cachedNetworkId = activeId
   }
   return viewsContract
 }

@@ -1,88 +1,61 @@
 import { useMemo, useState } from 'react'
-import {
-  DEFAULT_OPERATOR_FEE_CHANGE_BLOCK,
-  FIX_BLOCK,
-  LAST_FIX_BLOCK,
-  STAKING_GENESIS_BLOCK,
-} from '@/config'
+import { type BlockMarkerId } from '@/config'
 import { EventCard } from '@/features/timeline/EventCard'
 import { groupEvents } from '@/services/groupEvents'
+import { useNetwork } from '@/store/networkContext'
 import type { EventGroup, TimelineEvent } from '@/types/timeline'
 
-type RangeVariant = 'genesis' | 'fix' | 'last-fix' | 'default-fee-change'
-
-const COLORS: Record<RangeVariant, { border: string; text: string; dot: string }> = {
+const COLORS: Record<BlockMarkerId, { border: string; text: string; dot: string }> = {
   genesis: { border: 'border-amber-500', text: 'text-amber-700', dot: 'bg-amber-500' },
   fix: { border: 'border-red-500', text: 'text-red-700', dot: 'bg-red-500' },
   'last-fix': { border: 'border-amber-500', text: 'text-amber-700', dot: 'bg-amber-500' },
   'default-fee-change': { border: 'border-blue-500', text: 'text-blue-700', dot: 'bg-blue-500' },
 }
 
-type RangeSpec = {
-  id: RangeVariant
-  label: string
-  // true when the group belongs to this range (exclusive upper bound handled by array ordering)
-  contains: (block: number) => boolean
+function labelFor(markerId: BlockMarkerId, markerLabel: string, block: number): string {
+  const prefix = markerId === 'genesis' ? 'After SSV Staking Genesis' : `After ${markerLabel}`
+  return `${prefix} — Block ${block}`
 }
-
-// Ranges are evaluated in order; each event lands in the first range whose contains(block) returns true.
-// The predicates are "lower bounds" — walk ranges bottom-up so later (higher-block) markers take precedence.
-const RANGES_TOP_DOWN: RangeSpec[] = [
-  {
-    id: 'default-fee-change',
-    label: `After Default Operator Fee Change — Block ${DEFAULT_OPERATOR_FEE_CHANGE_BLOCK}`,
-    contains: (b) => b > DEFAULT_OPERATOR_FEE_CHANGE_BLOCK,
-  },
-  {
-    id: 'last-fix',
-    label: `After Last Bug Fix — Block ${LAST_FIX_BLOCK}`,
-    contains: (b) => b > LAST_FIX_BLOCK,
-  },
-  {
-    id: 'fix',
-    label: `After Bug Fix — Block ${FIX_BLOCK}`,
-    contains: (b) => b > FIX_BLOCK,
-  },
-  {
-    id: 'genesis',
-    label: `After SSV Staking Genesis — Block ${STAKING_GENESIS_BLOCK}`,
-    contains: (b) => b >= STAKING_GENESIS_BLOCK,
-  },
-]
-
-function bucketForBlock(block: number): RangeVariant {
-  for (const r of RANGES_TOP_DOWN) {
-    if (r.contains(block)) return r.id
-  }
-  return 'genesis'
-}
-
-// Render order is genesis → fix → last-fix → default-fee-change (chronological)
-const RANGES_CHRON = [...RANGES_TOP_DOWN].reverse()
 
 export function TimelineRail({ events }: { events: TimelineEvent[] }) {
-  const groupsByRange = useMemo(() => {
+  const { config } = useNetwork()
+
+  // Bands are the network's block markers sorted chronologically (ascending block).
+  const bandsChron = useMemo(
+    () => [...config.blockMarkers].sort((a, b) => a.block - b.block),
+    [config],
+  )
+  // For bucketing, evaluate from highest to lowest so later markers win.
+  const bandsTopDown = useMemo(() => [...bandsChron].reverse(), [bandsChron])
+
+  const groupsByBand = useMemo(() => {
     const all = groupEvents(events)
-    const map: Record<RangeVariant, EventGroup[]> = {
-      genesis: [],
-      fix: [],
-      'last-fix': [],
-      'default-fee-change': [],
-    }
+    const map = new Map<BlockMarkerId, EventGroup[]>(bandsChron.map((m) => [m.id, []]))
     for (const g of all) {
-      map[bucketForBlock(g.block)].push(g)
+      let assigned: BlockMarkerId | null = null
+      for (const m of bandsTopDown) {
+        // Genesis uses >= (registration at genesis block itself belongs to the first band);
+        // every later marker uses > (strictly after the marker block).
+        const ok = m.id === 'genesis' ? g.block >= m.block : g.block > m.block
+        if (ok) {
+          assigned = m.id
+          break
+        }
+      }
+      if (assigned === null) continue
+      map.get(assigned)!.push(g)
     }
     return map
-  }, [events])
+  }, [events, bandsChron, bandsTopDown])
 
   return (
     <div className="flex flex-col gap-3">
-      {RANGES_CHRON.map((r) => (
+      {bandsChron.map((m) => (
         <RangeSection
-          key={r.id}
-          variant={r.id}
-          label={r.label}
-          groups={groupsByRange[r.id]}
+          key={m.id}
+          variant={m.id}
+          label={labelFor(m.id, m.label, m.block)}
+          groups={groupsByBand.get(m.id) ?? []}
         />
       ))}
     </div>
@@ -94,7 +67,7 @@ function RangeSection({
   label,
   groups,
 }: {
-  variant: RangeVariant
+  variant: BlockMarkerId
   label: string
   groups: EventGroup[]
 }) {

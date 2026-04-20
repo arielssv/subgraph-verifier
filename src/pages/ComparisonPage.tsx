@@ -14,11 +14,13 @@ import { FilterPanel, type ShowFilter } from '@/features/comparison/FilterPanel'
 import { ResultsTable, countFiltered } from '@/features/comparison/ResultsTable'
 import { StatsCards, emptyStats } from '@/features/comparison/StatsCards'
 import { useComparison } from '@/store/comparisonContext'
+import { useNetwork } from '@/store/networkContext'
 import { METRIC_LIST, type MetricId } from '@/types/comparison'
 import { formatElapsed, formatRelativeTime } from '@/utils/formatTime'
 
 export function ComparisonPage() {
   const { state, run, refresh } = useComparison()
+  const { config } = useNetwork()
   const [operatorIdQuery, setOperatorIdQuery] = useState('')
   const [show, setShow] = useState<ShowFilter>('mismatch')
   const [metric, setMetric] = useState<MetricId>('ethFee')
@@ -39,6 +41,7 @@ export function ComparisonPage() {
         state={state}
         onRefresh={() => void refresh()}
         canRefresh={hasData}
+        networkLabel={config.label}
       />
 
       <StatsCards stats={stats} dimmed={!hasData} />
@@ -61,7 +64,7 @@ export function ComparisonPage() {
         )}
       </div>
 
-      {isIdle && <EmptyPanel onRun={() => void run()} />}
+      {isIdle && <EmptyPanel onRun={() => void run()} networkLabel={config.label} />}
       {isLoading && <LoadingPanel state={state} />}
       {isError && <ErrorPanel message={state.message} onRetry={() => void run()} />}
       {hasData && (
@@ -80,20 +83,22 @@ function Header({
   state,
   onRefresh,
   canRefresh,
+  networkLabel,
 }: {
   state: { status: 'idle' | 'loading' | 'ready' | 'error'; lastFetchedAt?: number }
   onRefresh: () => void
   canRefresh: boolean
+  networkLabel: string
 }) {
-  let subtitle = 'no data yet · Hoodi'
-  if (state.status === 'loading') subtitle = 'fetching · Hoodi'
+  let subtitle = `no data yet · ${networkLabel}`
+  if (state.status === 'loading') subtitle = `fetching · ${networkLabel}`
   if (state.status === 'ready' && 'lastFetchedAt' in state && state.lastFetchedAt) {
     return (
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold">Compare</h2>
           <p className="text-sm text-muted-foreground">
-            last fetched <RelativeTimestamp ts={state.lastFetchedAt} /> · Hoodi
+            last fetched <RelativeTimestamp ts={state.lastFetchedAt} /> · {networkLabel}
           </p>
         </div>
         <Button variant="outline" onClick={onRefresh} disabled={!canRefresh}>
@@ -102,7 +107,7 @@ function Header({
       </div>
     )
   }
-  if (state.status === 'error') subtitle = 'error · Hoodi'
+  if (state.status === 'error') subtitle = `error · ${networkLabel}`
 
   return (
     <div className="flex items-start justify-between gap-3">
@@ -117,13 +122,13 @@ function Header({
   )
 }
 
-function EmptyPanel({ onRun }: { onRun: () => void }) {
+function EmptyPanel({ onRun, networkLabel }: { onRun: () => void; networkLabel: string }) {
   return (
     <div className="flex flex-col items-center justify-center gap-4 rounded-md border border-dashed bg-card px-6 py-16 text-center">
       <div className="space-y-1">
         <p className="text-base font-medium">No data yet</p>
         <p className="max-w-md text-sm text-muted-foreground">
-          Compares every SSV operator on Hoodi between the subgraph and the on-chain Views
+          Compares every SSV operator on {networkLabel} between the subgraph and the on-chain Views
           contract. Runs in your browser — typically 10–60 seconds.
         </p>
       </div>

@@ -1,5 +1,6 @@
 import { Contract } from 'ethers'
-import { STAKING_GENESIS_BLOCK } from '@/config'
+import { getGenesisBlock } from '@/config'
+import { getActiveNetworkConfig } from '@/services/network'
 import { getViewsContract } from '@/services/onChainClient'
 import { fetchAllPaginated, gql } from '@/services/timelineClient'
 import {
@@ -53,6 +54,8 @@ async function fetchEventsStage(operatorId: string): Promise<{
   const operator = await fetchOperator(operatorId)
   if (!operator) throw new OperatorNotFoundError(operatorId)
 
+  const genesis = getGenesisBlock(getActiveNetworkConfig())
+
   const [
     registrations,
     migrations,
@@ -71,48 +74,48 @@ async function fetchEventsStage(operatorId: string): Promise<{
     ),
     fetchAllPaginated<MigrationEvent>(
       'clusterMigratedToETHs',
-      `operatorIds_contains: ["${operatorId}"], blockNumber_gte: "${STAKING_GENESIS_BLOCK}"`,
+      `operatorIds_contains: ["${operatorId}"], blockNumber_gte: "${genesis}"`,
       'owner operatorIds cluster_validatorCount cluster_active ethDeposited ssvRefunded effectiveBalance blockNumber transactionHash',
     ),
     fetchAllPaginated<ClusterEvent>(
       'validatorAddeds',
-      `operatorIds_contains: ["${operatorId}"], blockNumber_gte: "${STAKING_GENESIS_BLOCK}"`,
+      `operatorIds_contains: ["${operatorId}"], blockNumber_gte: "${genesis}"`,
       'owner operatorIds cluster_validatorCount cluster_active blockNumber transactionHash',
     ),
     fetchAllPaginated<ClusterEvent>(
       'validatorRemoveds',
-      `operatorIds_contains: ["${operatorId}"], blockNumber_gte: "${STAKING_GENESIS_BLOCK}"`,
+      `operatorIds_contains: ["${operatorId}"], blockNumber_gte: "${genesis}"`,
       'owner operatorIds cluster_validatorCount cluster_active blockNumber transactionHash',
     ),
     fetchAllPaginated<ClusterEvent>(
       'clusterLiquidateds',
-      `operatorIds_contains: ["${operatorId}"], blockNumber_gte: "${STAKING_GENESIS_BLOCK}"`,
+      `operatorIds_contains: ["${operatorId}"], blockNumber_gte: "${genesis}"`,
       'owner operatorIds cluster_validatorCount cluster_active blockNumber transactionHash',
     ),
     fetchAllPaginated<ClusterEvent>(
       'clusterReactivateds',
-      `operatorIds_contains: ["${operatorId}"], blockNumber_gte: "${STAKING_GENESIS_BLOCK}"`,
+      `operatorIds_contains: ["${operatorId}"], blockNumber_gte: "${genesis}"`,
       'owner operatorIds cluster_validatorCount cluster_active blockNumber transactionHash',
     ),
     fetchAllPaginated<FeeChangeEvent>(
       'operatorFeeExecuteds',
-      `operatorId: "${operatorId}", blockNumber_gte: "${STAKING_GENESIS_BLOCK}"`,
+      `operatorId: "${operatorId}", blockNumber_gte: "${genesis}"`,
       'operatorId fee blockNumber transactionHash',
     ),
     fetchAllPaginated<WithdrawalEvent>(
       'operatorWithdrawns',
-      `operatorId: "${operatorId}", blockNumber_gte: "${STAKING_GENESIS_BLOCK}"`,
+      `operatorId: "${operatorId}", blockNumber_gte: "${genesis}"`,
       'operatorId value blockNumber transactionHash',
     ),
     fetchAllPaginated<RemovalEvent>(
       'operatorRemoveds',
-      `operatorId: "${operatorId}", blockNumber_gte: "${STAKING_GENESIS_BLOCK}"`,
+      `operatorId: "${operatorId}", blockNumber_gte: "${genesis}"`,
       'operatorId blockNumber transactionHash',
     ),
   ])
 
   const events: TimelineEvent[] = [
-    ...mapRows('registration', registrations, STAKING_GENESIS_BLOCK),
+    ...mapRows('registration', registrations, genesis),
     ...mapRows('migration', migrations),
     ...mapRows('val-added', validatorAddeds),
     ...mapRows('val-removed', validatorRemoveds),
@@ -144,15 +147,16 @@ async function fetchPreGenesisStage(operatorId: string): Promise<{
   preRemovedCount: number
   registration: OperatorAddedEvent | null
 }> {
+  const genesis = getGenesisBlock(getActiveNetworkConfig())
   const [preAdded, preRemoved, registration] = await Promise.all([
     fetchAllPaginated<ClusterEvent>(
       'validatorAddeds',
-      `operatorIds_contains: ["${operatorId}"], blockNumber_lt: "${STAKING_GENESIS_BLOCK}"`,
+      `operatorIds_contains: ["${operatorId}"], blockNumber_lt: "${genesis}"`,
       'owner operatorIds cluster_validatorCount blockNumber',
     ),
     fetchAllPaginated<ClusterEvent>(
       'validatorRemoveds',
-      `operatorIds_contains: ["${operatorId}"], blockNumber_lt: "${STAKING_GENESIS_BLOCK}"`,
+      `operatorIds_contains: ["${operatorId}"], blockNumber_lt: "${genesis}"`,
       'owner operatorIds cluster_validatorCount blockNumber',
     ),
     fetchFirstRegistration(operatorId),

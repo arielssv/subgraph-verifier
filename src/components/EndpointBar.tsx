@@ -1,20 +1,21 @@
 import { useState } from 'react'
-import { DEFAULT_SUBGRAPH_URL } from '@/config'
 import {
+  getDefaultSubgraphUrl,
   getSubgraphUrl,
-  setSubgraphUrl,
   resetSubgraphUrl,
+  setSubgraphUrl,
 } from '@/services/endpoint'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 
 export function EndpointBar() {
+  const defaultUrl = getDefaultSubgraphUrl()
   const [active, setActive] = useState(getSubgraphUrl())
   const [draft, setDraft] = useState(active)
 
   const isDirty = draft.trim() !== active
-  const isCustom = active !== DEFAULT_SUBGRAPH_URL
+  const isCustom = active !== defaultUrl
   const isValid = /^https?:\/\/\S+$/.test(draft.trim())
 
   function onSave() {
@@ -26,8 +27,8 @@ export function EndpointBar() {
 
   function onReset() {
     resetSubgraphUrl()
-    setActive(DEFAULT_SUBGRAPH_URL)
-    setDraft(DEFAULT_SUBGRAPH_URL)
+    setActive(defaultUrl)
+    setDraft(defaultUrl)
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -44,7 +45,7 @@ export function EndpointBar() {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder={DEFAULT_SUBGRAPH_URL}
+          placeholder={defaultUrl}
           className="h-8 min-w-0 flex-1 text-xs font-mono"
           spellCheck={false}
         />

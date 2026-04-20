@@ -9,10 +9,15 @@ import {
   type ReactNode,
 } from 'react'
 import { runComparison } from '@/services/comparison'
+import { getActiveNetworkId } from '@/services/network'
 import type { ComparisonStats, OperatorRow } from '@/types/comparison'
 
-const STORAGE_KEY = 'subgraph-verifier:comparison:v2'
-const STORAGE_VERSION = 2
+const STORAGE_KEY_PREFIX = 'subgraph-verifier:comparison:v3:'
+const STORAGE_VERSION = 3
+
+function storageKey(): string {
+  return `${STORAGE_KEY_PREFIX}${getActiveNetworkId()}`
+}
 
 type Persisted = {
   version: typeof STORAGE_VERSION
@@ -59,7 +64,7 @@ function reducer(state: ComparisonState, action: Action): ComparisonState {
 
 function loadPersisted(): ComparisonState {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = localStorage.getItem(storageKey())
     if (!raw) return { status: 'idle' }
     const parsed = JSON.parse(raw) as Persisted
     if (parsed.version !== STORAGE_VERSION) return { status: 'idle' }
@@ -83,7 +88,7 @@ function savePersisted(state: ComparisonState): void {
       stats: state.stats,
       lastFetchedAt: state.lastFetchedAt,
     }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+    localStorage.setItem(storageKey(), JSON.stringify(payload))
   } catch {
     // localStorage may be full or disabled — accept loss of persistence rather than crashing
   }
@@ -132,7 +137,7 @@ export function ComparisonProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
-      localStorage.removeItem(STORAGE_KEY)
+      localStorage.removeItem(storageKey())
     } catch {
       // ignore
     }

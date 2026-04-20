@@ -1,4 +1,5 @@
 import { EVENT_ACCENT, EVENT_DOT, EVENT_TEXT } from '@/features/timeline/eventColors'
+import { useNetwork } from '@/store/networkContext'
 import {
   TYPE_LABELS,
   type ClusterEvent,
@@ -17,10 +18,6 @@ function shortAddr(addr: string): string {
 
 function shortTx(hash: string): string {
   return `${hash.slice(0, 10)}…`
-}
-
-function txHref(hash: string): string {
-  return `https://hoodi.etherscan.io/tx/${hash}`
 }
 
 function Field({ label, value }: { label: string; value: string | number }) {
@@ -168,8 +165,10 @@ function Body({ group }: { group: EventGroup }) {
 }
 
 export function EventCard({ group }: { group: EventGroup }) {
+  const { config } = useNetwork()
   const count = group.items.length
   const label = TYPE_LABELS[group.type as TimelineEventType]
+  const txHref = `${config.etherscanBaseUrl}/tx/${group.tx}`
 
   return (
     <div className="relative">
@@ -188,7 +187,7 @@ export function EventCard({ group }: { group: EventGroup }) {
             Block {group.block}
             {' · '}
             <a
-              href={txHref(group.tx)}
+              href={txHref}
               target="_blank"
               rel="noreferrer"
               className="text-primary hover:underline"
